@@ -1,0 +1,264 @@
+<html>
+<head>
+    <link rel="preconnect" href="https://fonts.gstatic.com">
+    <link href="https://fonts.googleapis.com/css2?family=Open+Sans&display=swap" rel="stylesheet">
+    <script src= "data.geojson" ></script>    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css"
+    integrity="sha512-xodZBNTC5n17Xt2atTPuE1HxjVMSvLVW9ocqUKLsCC5CXdbqCmblAshOMAS6/keqq/sMZMZ19scR4PsZChSR7A=="
+    crossorigin=""/>
+
+    <!-- Make sure you put this AFTER Leaflet's CSS -->
+ <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"
+ integrity="sha512-XQoYMqMTK8LvdxXYG3nZ448hOEQiglfqkJs1NOQV44cWnUrBc8PkAOcXy20w0vlaXaVUearIOBhiXZ5V3ynxwA=="
+ crossorigin=""></script>
+ <script src=" https://cdnjs.cloudflare.com/ajax/libs/leaflet-ajax/2.1.0/leaflet.ajax.min.js"
+ ></script>
+
+</head>
+<style>
+body{
+  font-family: 'Open Sans', sans-serif;
+}
+#mapid { height: 100%; }
+
+.app{
+    position:relative;
+    height: 100%;
+    width: 100%;
+}
+.app-info{
+    position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 909;
+  background-color: rgba(255, 255, 255, .15);  
+  backdrop-filter: blur(5px);
+  padding: 5px;
+  box-shadow: 0 0 1rem 0 rgba(0, 0, 0, .2);
+  border-radius: 5px;
+  font-family: 'Open Sans', sans-serif;
+  line-height: 30px;
+  padding-left: 10px;
+  width:300px;
+  height:200px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+</style>
+<body>
+    <div class="app">
+        <div id="mapid"></div>
+        <div class="app-info">
+                <div id="route_info"></div>
+                <div id="total-distance-container"></div>
+                <select onchange="onRouteChange(this)" id ="routes">
+                    <option default >All</option>
+                </select>
+         </div>
+        
+    </div>
+</body>
+<script>
+
+// Haversine function for distance calculating between two coordinates
+function getDistance(lat1, lon1, lat2, lon2) {
+  var R = 6371; // Radius of the earth in kilometers
+  var dLat = deg2rad(lat2 - lat1); // deg2rad below
+  var dLon = deg2rad(lon2 - lon1);
+  var a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  var d = R * c; // Distance in KM
+  return d;
+}
+function deg2rad(deg) {
+  return deg * (Math.PI / 180)
+}
+
+// Decalre variables and reusable icons
+var geojson
+var total_distances = 0 ; 
+var routelist = document.getElementById("routes")
+
+var bikon = L.icon({
+    iconUrl: 'bikon.png',iconSize:     [37, 28]
+});
+
+
+// Set API token and create map 
+var token = "{YOUR KEY HERE}" ; 
+var mymap = L.map('mapid').setView([53.27, -9.05], 13);
+
+// Add tile to map 
+L.tileLayer(`https://api.mapbox.com/styles/v1/{id}/tiles/{z}/{x}/{y}?access_token=${token}`, {
+    attribution: 'Map data &copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a> contributors, <a href="https://creativecommons.org/licenses/by-sa/2.0/">CC-BY-SA</a>, Imagery © <a href="https://www.mapbox.com/">Mapbox</a>',
+    maxZoom: 18,
+    id: 'mapbox/streets-v11',
+    tileSize: 512,
+    zoomOffset: -1
+}).addTo(mymap);
+
+
+// Add each feature to the map
+geojson = L.geoJSON(geojsonFeature,{
+  onEachFeature: function(feature, layer) {
+    // bindPopup during creation directly.
+    var feature_distance = 0 ; 
+    var pointA,pointB,center; 
+    if(feature.geometry.type=="MultiLineString"){
+        var totalpoints = 0 , currentpoint = 0 ; 
+
+        // Get total number of points across all lines 
+        for( k = 0 ; k < feature.geometry.coordinates.length; k++){
+          totalpoints+= feature.geometry.coordinates[k].length
+        }
+        // Itterate over each line in multi line string
+        for( k = 0 ; k < feature.geometry.coordinates.length; k++){
+            var i = 0 
+            // Itterate over each coordinate and get distance between it and the previous 
+            for(i = 0; i < feature.geometry.coordinates[k].length ; i++){
+                //Check if this is the "middle" point 
+                if(currentpoint ==  Math.floor(totalpoints /2 ) ){
+                     center = feature.geometry.coordinates[k][i]
+                }
+                if(i==0){
+                    pointA = feature.geometry.coordinates[k][i]
+                }else{
+                    pointB = feature.geometry.coordinates[k][i]
+                    feature_distance += getDistance(pointA[1],pointA[0], pointB[1],pointB[0] )
+                }
+                currentpoint ++ ; 
+                // Now Set A to Current 
+                pointA = feature.geometry.coordinates[k][i]
+            }
+         }
+    }
+    else{
+        // Itterate over each coordinate and get distance between it and the previous 
+        for(var i = 0 ; i < feature.geometry.coordinates.length ; i++){
+            // Get middle point of the Line for our Panning Function
+            if(i ==  Math.floor(feature.geometry.coordinates.length /2 ) ){
+                center = feature.geometry.coordinates[i]
+            }
+            if(i==0){
+                pointA = feature.geometry.coordinates[i]
+            }else{
+                pointB = feature.geometry.coordinates[i]
+                //feature_distance += getDistance(pointA, pointB )
+                feature_distance += getDistance(pointA[1],pointA[0], pointB[1],pointB[0] )
+            }
+            // Now Set A to Current 
+            pointA = feature.geometry.coordinates[i]
+        }
+    }
+   
+   //Set initial Styles 
+    layer.setStyle({
+        weight: 3,
+        color: '#F2561D',
+        dashArray: '',
+        fillOpacity: 0.7
+   });
+   
+    // Add this feature as a select option 
+    var option = document.createElement("option");
+    option.text = feature.properties.Cycle_Lane;
+    option.value = feature.properties.OBJECTID;
+    routelist.add(option);
+
+    // Add new properties to the feature 
+    feature.properties.Total_Length = (feature_distance).toFixed(3)
+    feature.properties.CenterPoint = center ; 
+
+    // Add to running sum of distances 
+    total_distances += feature_distance
+
+    //Add the onclick pop up 
+    layer.bindPopup('Name: ' +feature.properties.Cycle_Lane + '<br />Distance: ' + feature.properties.Total_Length +" KM");
+  }
+}).addTo(mymap);
+
+
+
+
+/* Add Bike Locations Markers */
+bikedata.forEach(function(item){
+    var popupContent = `<div><h5>${item.name}</h5>
+    <p>Capacity: <strong>${item.standQuantity}</strong></p>
+     </div>`
+    L.marker([item.coordinates.latitude, item.coordinates.longitude],{icon:bikon}).addTo(mymap).bindPopup(popupContent)
+})
+
+
+/* Update the Styles for the selected Route and reset others to the unselected style */
+function onRouteChange(route_item) {
+  var item = route_item.value
+  geojson.eachLayer(function (layer) {
+      try {
+        if(item.toLowerCase() == "all"){
+          highlightFeature({ "target": layer })
+          SetInfoWindow('All Routes', total_distances.toFixed(3))
+        }
+        else if(layer.feature.properties.OBJECTID == item){
+          highlightFeature({ "target": layer })
+          SetInfoWindow(layer.feature.properties.Cycle_Lane, layer.feature.properties.Total_Length)
+          PanToArea(layer.feature.properties.CenterPoint)
+        } else {
+          resetHighlight({ "target": layer })      
+        }
+      } catch(e) {}
+  });
+};
+
+
+
+/* Separated into own function as it is used in multiple places */
+function SetInfoWindow(title,distance){
+  document.getElementById("route_info").innerHTML = `
+    <div>
+      <h4>${title}</h4>
+      <p>${distance} KM</p>
+    </div>
+    `
+}
+
+
+/* Functions For Handling Style Changes */
+function highlightFeature(e) {
+  var layer = e.target;
+  layer.setStyle({
+      weight: 4,
+      color: '#9BBF17',
+      dashArray: '',
+      fillOpacity: 0.7
+  });
+  if (!L.Browser.ie && !L.Browser.opera) {
+    layer.bringToFront();
+  }
+}
+function resetHighlight(e) {
+  var layer = e.target;
+  geojson.resetStyle(layer);
+  layer.setStyle({
+      weight: 3,
+      color: '#F2561D',
+      dashArray: '',
+      fillOpacity: 0.7
+  });
+}
+
+function PanToArea(coordinates) {
+    mymap.panTo([coordinates[1],coordinates[0]]);
+}
+
+/* Set our default option to the "all" option */ 
+document.getElementById('routes').selectedIndex = 0;
+document.getElementById('routes').onchange();
+
+/* Add our Total Distance Calc to display at all times  */
+document.getElementById('total-distance-container').innerHTML = "Distances All Routes "+total_distances.toFixed(3)+" KM"
+</script>
+</html>
